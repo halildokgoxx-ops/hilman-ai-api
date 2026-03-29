@@ -6,39 +6,50 @@ import requests
 app = Flask(__name__)
 CORS(app)
 
-# AYARLAR (Burası Çok Kritik)
 MY_KEY = "Hilman-123456789" 
 GROQ_KEY = "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"
 
 @app.route('/')
 def home():
-    return "<h1>HilmanAI Online!</h1>"
+    return "HilmanAI Online"
 
 @app.route('/v1/chat', methods=['POST'])
 def chat():
-    # Header Kontrolü
+    # Yetki Kontrolü
     auth = request.headers.get("Authorization")
     if auth != f"Bearer {MY_KEY}":
-        return jsonify({"error": f"Yetkisiz! Beklenen: Bearer {MY_KEY}, Gelen: {auth}"}), 401
+        return jsonify({"error": "Gecersiz Hilman Key"}), 401
 
     data = request.get_json(silent=True)
-    if not data or 'message' not in data:
-        return jsonify({"error": "Mesaj eksik"}), 400
+    user_msg = data.get("message", "Merhaba")
 
-    # Groq API'ye Gönder
+    # Groq API Çağrısı
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    headers = {"Authorization": f"Bearer {GROQ_KEY}", "Content-Type": "application/json"}
+    payload = {
+        "model": "llama3-70b-8192",
+        "messages": [{"role": "user", "content": user_msg}]
+    }
+
     try:
-        url = "https://api.groq.com/openai/v1/chat/completions"
-        headers = {"Authorization": f"Bearer {GROQ_KEY}", "Content-Type": "application/json"}
-        payload = {
-            "model": "llama3-70b-8192",
-            "messages": [{"role": "user", "content": data['message']}]
-        }
-        r = requests.post(url, json=payload, headers=headers, timeout=20)
-        return jsonify(r.json())
+        response = requests.post(url, json=payload, headers=headers, timeout=20)
+        res_data = response.json()
+
+        # KRİTİK DÜZELTME: 'choices' var mı kontrol et
+        if 'choices' in res_data:
+            return jsonify({
+                "status": "success",
+                "response": res_data['choices'][0]['message']['content']
+            })
+        else:
+            # Groq hata döndürdüyse hatayı yazdır
+            error_msg = res_data.get('error', {}).get('message', 'Bilinmeyen Groq hatası')
+            return jsonify({"error": f"Groq Hatasi: {error_msg}"}), 502
+
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": f"Sunucu Hatasi: {str(e)}"}), 500
 
 if __name__ == "__main__":
-    # Render'ın verdiği portu kullan, yoksa 5000'den aç
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+    
